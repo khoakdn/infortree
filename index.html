@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Elegant Tree with Smooth Zoom & Improved Labels</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: radial-gradient(circle at center, #fff59d, #ffe082, #ffd54f, #ffca28);
+      animation: backgroundPulse 10s infinite alternate;
+    }
+    svg {
+      width: 100%;
+      height: 100vh;
+      display: block;
+      transition: transform 0.6s ease-in-out; /* smoother zoom */
+    }
+    .circle {
+      stroke: none;
+      transform-origin: center;
+      transform: scale(0);
+      animation: grow 0.8s ease-out forwards, sway 4s ease-in-out infinite alternate;
+      filter: drop-shadow(0 0 5px rgba(0,0,0,0.3));
+      cursor: pointer;
+      transition: transform 0.5s, fill 0.5s, filter 0.5s;
+    }
+    .circle.static {
+      animation: grow 0.8s ease-out forwards; /* no sway */
+    }
+    .circle.zoomed {
+      filter: drop-shadow(0 0 15px #FFD700);
+    }
+    .circle:hover {
+      transform: scale(1.1);
+      fill: #FFD700 !important;
+    }
+    .branch {
+      fill: none;
+      stroke: #444;
+      stroke-width: 4;
+      stroke-linecap: round;
+      stroke-dasharray: 200;
+      stroke-dashoffset: 200;
+      animation: draw 1s ease-out forwards;
+    }
+    .trunk-shape {
+      fill: #8B5A2B;
+      stroke: #5C4033;
+      stroke-width: 4;
+    }
+    text {
+      font-family: Arial, sans-serif;
+      fill: white;
+      text-anchor: middle;
+      dominant-baseline: middle;
+      pointer-events: none;
+    }
+    .project-box {
+      position: absolute;
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 8px 20px rgba(0,0,0,0.3);
+      padding: 16px 20px;
+      font-family: Arial, sans-serif;
+      font-size: 14px;
+      color: #333;
+      display: none;
+      z-index: 10;
+      min-width: 220px;
+      animation: fadeZoom 0.4s ease;
+      transform-origin: top left;
+      border: 2px solid #ddd;
+    }
+    .project-box::after {
+      content: \"\";
+      position: absolute;
+      bottom: -10px;
+      left: 20px;
+      border-width: 10px;
+      border-style: solid;
+      border-color: #fff transparent transparent transparent;
+      filter: drop-shadow(0 -2px 2px rgba(0,0,0,0.1));
+    }
+    .project-box .close-btn {
+      float: right;
+      cursor: pointer;
+      color: #888;
+      font-size: 16px;
+      margin-left: 10px;
+    }
+    .project-box .close-btn:hover {
+      color: #f00;
+    }
+
+    @keyframes grow {
+      to { transform: scale(1); }
+    }
+    @keyframes draw {
+      to { stroke-dashoffset: 0; }
+    }
+    @keyframes sway {
+      0% { transform: scale(1) rotate(0deg); }
+      50% { transform: scale(1) rotate(1deg); }
+      100% { transform: scale(1) rotate(-1deg); }
+    }
+    @keyframes fadeZoom {
+      from { opacity: 0; transform: scale(0.8); }
+      to { opacity: 1; transform: scale(1); }
+    }
+    @keyframes backgroundPulse {
+      0% { background-position: center; }
+      100% { background-position: 80% 80%; }
+    }
+  </style>
+</head>
+<body>
+  <svg id="tree" viewBox="0 0 500 700">
+    <!-- Elegant stable trunk -->
+    <path class="trunk-shape" d="
+      M240,300 
+      C235,380 220,460 220,520 
+      C240,540 260,540 280,520 
+      C280,460 265,380 260,300 
+      Z" />
+    <g id="branches"></g>
+    <g id="nodes"></g>
+  </svg>
+
+  <div id="projectBox" class="project-box"></div>
+
+  <script>
+    const svg = document.getElementById('tree');
+    const branchesGroup = document.getElementById('branches');
+    const nodesGroup = document.getElementById('nodes');
+    const projectBox = document.getElementById('projectBox');
+
+    const centerX = 250;
+    const centerY = 250;
+
+    const leafColors = ['#8BC34A', '#7CB342', '#689F38', '#558B2F', '#9CCC65'];
+
+    const company = { label: "Company" };
+    const partners = Array.from({ length: 8 }, (_, i) => ({ label: `Partner ${i + 1}` }));
+    const projects = Array.from({ length: 12 }, (_, i) => ({ label: `Project ${i + 1}`, details: `Description for Project ${i + 1}\nMore info line 1\nMore info line 2` }));
+
+    let isZoomed = false;
+
+    function createBranchPath(x1, y1, x2, y2) {
+      const dx = x2 - x1;
+      const dy = y2 - y1;
+      const cx1 = x1 + dx * 0.3;
+      const cy1 = y1 + dy * 0.1;
+      const cx2 = x1 + dx * 0.7;
+      const cy2 = y1 + dy * 0.9;
+      return `M ${x1},${y1} C ${cx1},${cy1} ${cx2},${cy2} ${x2},${y2}`;
+    }
+
+    function createLeaf(x, y, radius, label, zoomTarget, isCompany = false, isProject = false, projectData = {}) {
+      const leaf = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+      leaf.setAttribute("cx", x);
+      leaf.setAttribute("cy", y);
+      leaf.setAttribute("r", radius);
+      leaf.setAttribute("class", "circle" + (isCompany ? " static" : ""));
+      leaf.style.fill = leafColors[Math.floor(Math.random() * leafColors.length)];
+      leaf.addEventListener('click', (e) => {
+        e.stopPropagation();
+        zoomTo(zoomTarget, leaf);
+        if (isProject) showProjectBox(leaf, projectData);
+        else hideProjectBox();
+      });
+      nodesGroup.appendChild(leaf);
+
+      const labelText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      labelText.setAttribute("x", x);
+      labelText.setAttribute("y", y + 1); // slight vertical align fix
+      labelText.style.fontSize = `${radius * 0.5}px`; // scale font to radius
+      labelText.textContent = label.length > 10 ? label.slice(0, 9) + '…' : label;
+      nodesGroup.appendChild(labelText);
+    }
+
+    function zoomTo(target, element) {
+      document.querySelectorAll('.circle').forEach(c => c.classList.remove('zoomed'));
+      element.classList.add('zoomed');
+
+      const svgBox = svg.viewBox.baseVal;
+      const percentX = (target.x / svgBox.width) * 100;
+      const percentY = (target.y / svgBox.height) * 100;
+
+      svg.style.transformOrigin = `${percentX}% ${percentY}%`;
+      svg.style.transform = 'scale(2)';
+      isZoomed = true;
+    }
+
+    function showProjectBox(leafElement, projectData) {
+      const rect = leafElement.getBoundingClientRect();
+      projectBox.style.left = `${rect.left + rect.width / 2 - 110}px`; // center horizontally
+      projectBox.style.top = `${rect.bottom + 10}px`; // below the leaf
+      projectBox.innerHTML = `
+        <div>
+          <span class="close-btn" onclick="hideProjectBox()">×</span>
+          <strong>${projectData.label}</strong>
+          <p style="margin-top:8px;">${projectData.details.replace(/\n/g, '<br>')}</p>
+        </div>`;
+      projectBox.style.display = 'block';
+    }
+
+    function hideProjectBox() {
+      projectBox.style.display = 'none';
+    }
+
+    document.body.addEventListener('click', () => {
+      if (isZoomed) {
+        svg.style.transform = 'scale(1)';
+        document.querySelectorAll('.circle').forEach(c => c.classList.remove('zoomed'));
+        isZoomed = false;
+      }
+      hideProjectBox();
+    });
+
+    function renderTree() {
+      branchesGroup.innerHTML = '';
+      nodesGroup.innerHTML = '';
+
+      createLeaf(centerX, centerY, 50, company.label, { x: centerX, y: centerY }, true);
+
+      const partnersRadius = 110;
+      partners.forEach((p, i) => {
+        const angle = (2 * Math.PI / partners.length) * i;
+        const x = centerX + partnersRadius * Math.cos(angle);
+        const y = centerY + partnersRadius * Math.sin(angle);
+        const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        path.setAttribute("d", createBranchPath(centerX, centerY, x, y));
+        path.setAttribute("class", "branch");
+        branchesGroup.appendChild(path);
+        createLeaf(x, y, 30, p.label, { x, y });
+      });
+
+      const projectsRadius = 170;
+      projects.forEach((p, i) => {
+        const angle = (2 * Math.PI / projects.length) * i;
+        const x = centerX + projectsRadius * Math.cos(angle);
+        const y = centerY + projectsRadius * Math.sin(angle);
+        const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        path.setAttribute("d", createBranchPath(centerX, centerY, x, y));
+        path.setAttribute("class", "branch");
+        branchesGroup.appendChild(path);
+        createLeaf(x, y, 18, p.label, { x, y }, false, true, p);
+      });
+    }
+
+    renderTree();
+  </script>
+</body>
+</html>
